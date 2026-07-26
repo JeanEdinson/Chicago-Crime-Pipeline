@@ -317,3 +317,1254 @@ Agregar las siguientes imágenes en esta sección:
 - Árbol del proyecto.
 - Estructura de la carpeta `data`.
 - Contenido de la tabla de control después de ejecutar el DAG.
+
+# 🥉 Capa Bronze
+
+## Objetivo
+
+La capa **Bronze** constituye el punto de entrada de los datos dentro de la arquitectura Medallion.
+
+Su objetivo es almacenar los datos prácticamente en su estado original, realizando únicamente aquellas transformaciones necesarias para facilitar el procesamiento de las siguientes capas.
+
+En este proyecto la capa Bronze es responsable de:
+
+- Leer los archivos CSV originales.
+- Aplicar un esquema (`Schema`) definido manualmente.
+- Incorporar columnas de metadatos.
+- Almacenar la información en formato Parquet.
+- Particionar los datos por año (`Year`).
+- Registrar el archivo procesado en la tabla de control.
+
+La implementación de esta capa se encuentra en:
+
+```text
+app/
+└── ingestion/
+    └── bronze_ingestion.py
+```
+
+---
+
+# Flujo de la capa Bronze
+
+```mermaid
+flowchart LR
+
+A[CSV] --> B[Lectura con Schema]
+
+B --> C[Agregar metadata]
+
+C --> D[Particionar por Year]
+
+D --> E[Guardar Parquet]
+
+E --> F[Registrar archivo en table_control]
+```
+
+---
+
+# Lectura de datos
+
+En lugar de permitir que Spark infiera automáticamente el tipo de cada columna, el proyecto define explícitamente un **Schema** mediante `StructType`.
+
+```python
+spark.read \
+    .option("header", "true") \
+    .schema(schema_chicago_crime) \
+    .csv(...)
+```
+
+Esta estrategia ofrece varias ventajas:
+
+- Evita errores de inferencia de tipos.
+- Reduce el tiempo de lectura.
+- Mantiene un esquema consistente entre ejecuciones.
+- Facilita el mantenimiento del pipeline.
+
+---
+
+# Esquema de datos
+
+El dataset contiene información relacionada con delitos ocurridos en la ciudad de Chicago.
+
+Algunas de las columnas más relevantes son:
+
+| Columna | Descripción |
+|----------|-------------|
+| ID | Identificador único del crimen |
+| Case Number | Número del caso |
+| Date | Fecha del incidente |
+| Block | Dirección aproximada |
+| Primary Type | Tipo principal del delito |
+| Description | Descripción del delito |
+| Arrest | Indica si hubo arresto |
+| Domestic | Delito doméstico |
+| Beat | Beat policial |
+| District | Distrito policial |
+| Ward | Distrito administrativo |
+| Community Area | Comunidad |
+| Latitude | Latitud |
+| Longitude | Longitud |
+| Year | Año del incidente |
+
+---
+
+# Incorporación de metadatos
+
+Después de leer el archivo se agregan dos columnas adicionales.
+
+## ingestion_date
+
+Registra la fecha y hora exacta en la que el registro fue incorporado al Data Lake.
+
+```python
+current_timestamp()
+```
+
+Esta columna permite:
+
+- Auditoría.
+- Trazabilidad.
+- Seguimiento de cargas.
+
+---
+
+## file_source
+
+Registra el nombre del archivo desde el cual proviene cada registro.
+
+```python
+file_source = path_file.name
+```
+
+Gracias a esta columna las capas posteriores pueden identificar qué registros pertenecen a cada archivo procesado.
+
+Esta decisión resulta fundamental para implementar el procesamiento incremental.
+
+---
+
+# Escritura de datos
+
+Una vez agregados los metadatos, la información se almacena en formato **Parquet**.
+
+```python
+bronze_df.write \
+    .mode("append") \
+    .partitionBy("Year") \
+    .parquet(path_destination)
+```
+
+El modo de escritura utilizado es:
+
+```text
+append
+```
+
+Esto permite incorporar nuevos archivos sin reemplazar la información previamente almacenada.
+
+---
+
+# Particionamiento
+
+Los datos son particionados únicamente por la columna:
+
+```text
+Year
+```
+
+La estructura generada es similar a la siguiente:
+
+```text
+bronze_level/
+
+Year=2001/
+Year=2002/
+Year=2003/
+...
+Year=2025/
+```
+
+Cada carpeta contiene uno o varios archivos Parquet generados por Spark.
+
+Esta estrategia reduce significativamente la cantidad de datos leídos cuando las consultas filtran por año.
+
+---
+
+# Registro en la tabla de control
+
+Al finalizar el procesamiento se registra el archivo procesado dentro de la tabla de control.
+
+Se agrega un registro con la siguiente información:
+
+| Campo | Valor inicial |
+|--------|---------------|
+| file_source | Nombre del archivo CSV |
+| status_bronze | True |
+| status_silver | False |
+| status_gold | False |
+
+De esta forma la siguiente capa conoce exactamente qué archivos aún no han sido procesados.
+
+---
+
+# Resultado de la capa Bronze
+
+Al finalizar la ejecución se generan dos salidas.
+
+## Datos
+
+```text
+data/
+
+bronze_level/
+
+Year=2001/
+Year=2002/
+...
+```
+
+---
+
+## Metadata
+
+```text
+metadata/
+
+table_control/
+```
+
+---
+
+# Capturas recomendadas
+
+Agregar las siguientes imágenes:
+
+📷 Esquema del archivo CSV.
+
+📷 Carpeta Bronze particionada por Year.
+
+📷 Contenido de la tabla de control después del procesamiento.
+
+📷 Spark UI mostrando el Job correspondiente a Bronze.
+
+---
+
+# Consideraciones de diseño
+
+Se decidió particionar únicamente por el campo **Year**, ya que representa una dimensión temporal ampliamente utilizada para consultas analíticas y evita generar un número excesivo de particiones pequeñas.
+
+Asimismo, el uso del modo **append** permite incorporar nuevos archivos sin sobrescribir la información previamente almacenada, manteniendo el historial completo de los datos ingeridos.
+
+Finalmente, la incorporación de una tabla de control desacopla el procesamiento entre las distintas capas del pipeline, permitiendo que Silver procese únicamente los archivos pendientes sin necesidad de mover o eliminar los datos almacenados en Bronze.
+
+# 🥈 Capa Silver
+
+## Objetivo
+
+La capa **Silver** tiene como objetivo transformar los datos provenientes de la capa Bronze en un conjunto de datos limpio, estandarizado y consistente, listo para ser utilizado en procesos analíticos.
+
+A diferencia de la capa Bronze, aquí sí se aplican reglas de calidad de datos, normalización y enriquecimiento de la información.
+
+La implementación de esta capa se encuentra en:
+
+```text
+app/
+└── transformation/
+    └── silver_transformation.py
+```
+
+---
+
+# Flujo de la capa Silver
+
+```mermaid
+flowchart LR
+
+A[Tabla de Control]
+
+A --> B[Obtener archivos pendientes]
+
+B --> C[Leer Bronze]
+
+C --> D[Filtrar únicamente archivos pendientes]
+
+D --> E[Renombrar columnas]
+
+E --> F[Seleccionar columnas]
+
+F --> G[Limpieza de datos]
+
+G --> H[Agregar columnas calculadas]
+
+H --> I[Guardar Silver]
+
+I --> J[Actualizar Tabla de Control]
+```
+
+---
+
+# Procesamiento incremental
+
+Antes de leer la capa Bronze, el proceso consulta la tabla de control para identificar qué archivos aún no han sido procesados.
+
+```python
+status_silver == False
+```
+
+Si no existen archivos pendientes, el proceso finaliza lanzando la excepción:
+
+```text
+There are no files to process.
+```
+
+Con esta estrategia se evita volver a transformar archivos ya procesados.
+
+---
+
+# Lectura de datos
+
+Una vez identificados los archivos pendientes, se realiza la lectura de toda la capa Bronze.
+
+Posteriormente, se ejecuta un **Broadcast Join** con la tabla de control para conservar únicamente los registros pertenecientes a los archivos pendientes.
+
+```python
+join(
+    broadcast(df_table_control.select("file_source")),
+    on="file_source",
+    how="inner"
+)
+```
+
+El uso de `broadcast()` evita un Shuffle innecesario y mejora considerablemente el rendimiento debido al reducido tamaño de la tabla de control.
+
+---
+
+# Renombrado de columnas
+
+Con el objetivo de mantener una nomenclatura uniforme y facilitar futuras consultas SQL, todas las columnas son convertidas al formato:
+
+```text
+snake_case
+```
+
+Por ejemplo:
+
+| Bronze | Silver |
+|---------|---------|
+| ID | id |
+| Case Number | case_number |
+| Primary Type | primary_type |
+| Community Area | community_area |
+| Updated On | updated_on |
+
+Este cambio mejora la legibilidad del código y sigue una convención ampliamente utilizada en proyectos de Ingeniería de Datos.
+
+---
+
+# Selección de columnas
+
+Después del renombrado se conservan únicamente las columnas relevantes para el análisis.
+
+Entre ellas:
+
+- file_source
+- id
+- date
+- block
+- primary_type
+- description
+- arrest
+- domestic
+- beat
+- district
+- ward
+- community_area
+- latitude
+- longitude
+- year
+
+Eliminar columnas innecesarias reduce el tamaño de almacenamiento y mejora el rendimiento de las consultas posteriores.
+
+---
+
+# Eliminación de registros duplicados
+
+La capa Silver elimina posibles registros duplicados utilizando el identificador único del delito.
+
+```python
+dropDuplicates(["id"])
+```
+
+Con ello se garantiza que cada crimen aparezca una única vez dentro del conjunto de datos.
+
+---
+
+# Conversión del tipo de dato Date
+
+En Bronze la columna **Date** permanece como texto.
+
+En Silver se transforma al tipo de dato `Date`.
+
+```python
+to_date(
+    col("date"),
+    "MM/dd/yyyy hh:mm:ss a"
+)
+```
+
+Esto permite realizar posteriormente filtros, agrupaciones y funciones temporales de manera eficiente.
+
+---
+
+# Tratamiento de valores nulos
+
+Se eliminan los registros cuya fecha sea nula.
+
+Además, también se descartan registros cuando todas las siguientes columnas son simultáneamente nulas:
+
+- block
+- primary_type
+- description
+- arrest
+- domestic
+
+Esta validación conserva únicamente registros con información mínima útil para el análisis.
+
+---
+
+# Limpieza de texto
+
+Las columnas de texto son normalizadas mediante dos transformaciones.
+
+## Eliminación de espacios
+
+Se eliminan:
+
+- espacios al inicio;
+- espacios al final;
+- múltiples espacios consecutivos.
+
+```python
+trim()
+
+regexp_replace()
+```
+
+Ejemplo:
+
+Antes
+
+```text
+"  MOTOR    VEHICLE   THEFT "
+```
+
+Después
+
+```text
+"MOTOR VEHICLE THEFT"
+```
+
+---
+
+# Capitalización
+
+Posteriormente algunas columnas son convertidas utilizando:
+
+```python
+initcap()
+```
+
+Ejemplo
+
+Antes
+
+```text
+MOTOR VEHICLE THEFT
+```
+
+Después
+
+```text
+Motor Vehicle Theft
+```
+
+Las columnas transformadas son:
+
+- primary_type
+- description
+
+Con ello se mejora la presentación de la información para futuros dashboards y reportes.
+
+---
+
+# Enriquecimiento de datos
+
+Se incorpora una nueva columna:
+
+```text
+day_name_of_week
+```
+
+La cual representa el nombre del día de la semana obtenido a partir de la fecha del incidente.
+
+```python
+date_format(
+    col("date"),
+    "EEEE"
+)
+```
+
+Esta columna permite generar análisis temporales sin necesidad de recalcularla posteriormente.
+
+---
+
+# Metadatos
+
+Antes de escribir la información se agrega nuevamente la columna:
+
+```text
+ingestion_date
+```
+
+Esta columna registra cuándo la información fue transformada dentro de la capa Silver.
+
+---
+
+# Escritura de datos
+
+Los datos transformados se almacenan nuevamente en formato Parquet.
+
+```python
+mode("append")
+```
+
+y se mantienen particionados por:
+
+```text
+Year
+```
+
+Conservar la misma estrategia de particionamiento simplifica el procesamiento posterior de la capa Gold.
+
+---
+
+# Actualización de la tabla de control
+
+Una vez finalizada la transformación, se obtienen los archivos procesados.
+
+```python
+select("file_source").distinct()
+```
+
+Posteriormente se actualiza el estado:
+
+```text
+status_silver = True
+```
+
+Finalmente la tabla de control se sobrescribe con la información actualizada.
+
+De esta manera Bronze nunca volverá a enviar esos archivos para ser transformados.
+
+---
+
+# Resultado de la capa Silver
+
+Al finalizar el proceso se obtiene:
+
+```text
+silver_level/
+
+Year=2001/
+Year=2002/
+Year=2003/
+...
+```
+
+junto con una tabla de control actualizada.
+
+---
+
+# Capturas recomendadas
+
+Agregar las siguientes imágenes:
+
+📷 Datos almacenados en la carpeta Silver.
+
+📷 Ejemplo del contenido de un archivo Parquet.
+
+📷 Tabla de control con `status_silver = True`.
+
+📷 Spark UI mostrando el Job de transformación.
+
+---
+
+# Consideraciones de diseño
+
+La lógica implementada en Silver sigue un enfoque incremental apoyado en una tabla de control, evitando reprocesamientos innecesarios.
+
+El uso de un **Broadcast Join** reduce el costo de filtrar únicamente los archivos pendientes, mientras que las transformaciones aplicadas garantizan que los datos lleguen a la capa Gold con un formato consistente y listo para generar indicadores agregados.
+
+Asimismo, mantener el particionamiento por `Year` permite conservar una organización uniforme de los datos entre Bronze y Silver, facilitando futuras consultas y optimizando la lectura de información histórica.
+
+# 🥇 Capa Gold
+
+## Objetivo
+
+La capa **Gold** representa el nivel de consumo del Data Lake.
+
+En esta capa los datos transformados de Silver se convierten en tablas agregadas listas para ser consumidas por herramientas de Business Intelligence, dashboards o procesos analíticos.
+
+La implementación se encuentra en:
+
+```text
+app/
+└── aggregation/
+    └── gold_aggregation.py
+```
+
+---
+
+# Flujo de la capa Gold
+
+```mermaid
+flowchart LR
+
+A[Leer Tabla Control]
+
+A --> B[Leer Silver]
+
+B --> C[Construcción de tablas agregadas]
+
+C --> D[Guardar Parquet]
+
+D --> E[Actualizar Tabla Control]
+```
+
+---
+
+# Lectura de datos
+
+La capa Gold comienza leyendo dos fuentes de información.
+
+## Tabla de control
+
+```text
+metadata/table_control
+```
+
+Esta tabla será utilizada posteriormente para actualizar el estado de los archivos ya procesados.
+
+---
+
+## Capa Silver
+
+```text
+silver_level/
+```
+
+Todos los registros transformados son utilizados para construir los indicadores analíticos.
+
+---
+
+# Tabla 1 - Número de crímenes y arrestos por tipo de delito
+
+La primera agregación calcula el número de delitos y arrestos agrupando por:
+
+- Año
+- Tipo principal del delito
+- Descripción del delito
+
+```python
+groupBy(
+    "year",
+    "primary_type",
+    "description"
+)
+```
+
+Se generan los siguientes indicadores:
+
+| Columna | Descripción |
+|----------|-------------|
+| number_of_crimes | Número total de delitos |
+| number_of_arrests | Número total de arrestos |
+
+Para calcular los arrestos se convierte el campo booleano a entero.
+
+```python
+sum(
+    arrest.cast("int")
+)
+```
+
+De esta forma:
+
+```text
+True  -> 1
+
+False -> 0
+```
+
+La suma representa directamente la cantidad de arrestos.
+
+---
+
+# Tabla 2 - Indicadores por día de la semana
+
+La segunda tabla resume la información por:
+
+- Año
+- Día de la semana
+
+```python
+groupBy(
+    "year",
+    "day_name_of_week"
+)
+```
+
+Se calculan tres indicadores:
+
+- Número de delitos.
+- Número de arrestos.
+- Número de delitos domésticos.
+
+Esta tabla resulta especialmente útil para construir gráficos temporales y detectar patrones semanales.
+
+---
+
+# Tabla 3 - Indicadores geográficos
+
+La tercera tabla agrega la información según la ubicación donde ocurrió el delito.
+
+Las dimensiones utilizadas son:
+
+- community_area
+- ward
+- district
+- beat
+- block
+
+Para cada combinación se calculan:
+
+- Número de delitos.
+- Número de arrestos.
+- Número de delitos domésticos.
+
+Esta información permite desarrollar mapas, análisis geográficos y estudios de concentración del crimen.
+
+---
+
+# Tabla 4 - Ranking de delitos por año
+
+La cuarta tabla genera un ranking del tipo de delito con menor incidencia para cada año.
+
+Primero se calcula el número de delitos por:
+
+```python
+groupBy(
+    "year",
+    "primary_type"
+)
+```
+
+Posteriormente se define una función de ventana.
+
+```python
+Window
+.partitionBy("year")
+.orderBy(
+    asc("number_of_crimes")
+)
+```
+
+La ventana reinicia el cálculo para cada año y ordena los delitos desde el menor número de ocurrencias hacia el mayor.
+
+Finalmente se aplica:
+
+```python
+dense_rank()
+```
+
+obteniendo un ranking como el siguiente.
+
+| Year | Primary Type | Crimes | Ranking |
+|------|--------------|--------|---------|
+|2020|Homicide|120|1|
+|2020|Kidnapping|165|2|
+|2020|Arson|240|3|
+
+Al utilizar **Dense Rank**, si existen empates ambos registros reciben el mismo ranking y no se generan saltos en la numeración.
+
+---
+
+# Escritura de resultados
+
+Cada tabla agregada se almacena de manera independiente.
+
+```text
+gold_level/
+
+n_crimes_arrests_year/
+
+n_indicators_day/
+
+n_indicators_location/
+
+ranking_year_primary_type/
+```
+
+Todas las tablas son escritas utilizando:
+
+```python
+mode("overwrite")
+```
+
+Esto garantiza que cada ejecución reconstruya completamente los indicadores analíticos a partir de la información disponible en Silver.
+
+---
+
+# Actualización de la tabla de control
+
+Una vez generadas todas las tablas agregadas, la tabla de control es actualizada.
+
+El proceso establece:
+
+```text
+status_gold = True
+```
+
+para todos los archivos registrados.
+
+Para evitar inconsistencias durante la escritura, la actualización se realiza mediante el siguiente procedimiento:
+
+1. Crear una tabla temporal.
+2. Escribir la información actualizada.
+3. Eliminar la tabla original.
+4. Renombrar la tabla temporal con el nombre definitivo.
+
+Esta estrategia evita dejar una tabla parcialmente escrita en caso de que ocurra un error durante el proceso.
+
+---
+
+# Resultado de la capa Gold
+
+La estructura final es la siguiente.
+
+```text
+gold_level/
+
+├── n_crimes_arrests_year/
+
+├── n_indicators_day/
+
+├── n_indicators_location/
+
+└── ranking_year_primary_type/
+```
+
+Cada carpeta contiene archivos Parquet listos para ser consumidos por herramientas analíticas.
+
+---
+
+# Indicadores generados
+
+El pipeline produce actualmente cuatro conjuntos de indicadores.
+
+| Tabla | Descripción |
+|---------|------------|
+| n_crimes_arrests_year | Número de delitos y arrestos por año, tipo y descripción. |
+| n_indicators_day | Delitos, arrestos y delitos domésticos por día de la semana. |
+| n_indicators_location | Indicadores geográficos por comunidad, distrito, beat y bloque. |
+| ranking_year_primary_type | Ranking anual de los delitos con menor incidencia. |
+
+---
+
+# Capturas recomendadas
+
+Agregar las siguientes imágenes:
+
+📷 Carpeta `gold_level`.
+
+📷 Contenido de cada tabla agregada.
+
+📷 Ejemplo de un archivo Parquet de Gold.
+
+📷 Spark UI mostrando el Job de agregación.
+
+---
+
+# Consideraciones de diseño
+
+La capa Gold concentra la lógica analítica del proyecto y genera datasets optimizados para consulta, evitando que las herramientas de visualización deban ejecutar agregaciones complejas sobre millones de registros.
+
+Cada tabla se almacena de forma independiente, permitiendo que los consumidores accedan únicamente a la información necesaria según su caso de uso.
+
+La utilización de funciones de ventana (`Window` + `dense_rank`) demuestra el uso de capacidades avanzadas de Spark para construir indicadores analíticos sin necesidad de procesos adicionales.
+
+# 🌬️ Orquestación con Apache Airflow
+
+## Objetivo
+
+Apache Airflow es el encargado de automatizar todo el pipeline de procesamiento.
+
+Cada vez que llegan nuevos archivos CSV a la carpeta `pre-raw/pending`, Airflow ejecuta automáticamente las distintas capas de la arquitectura Medallion hasta publicar los resultados finales en Google Cloud Storage.
+
+La implementación del DAG se encuentra en:
+
+```text
+dags/
+└── chicago_crime_orchestration.py
+```
+
+---
+
+# Flujo general del DAG
+
+```mermaid
+flowchart LR
+
+A[FileSensor]
+
+A --> B[Get Pending Files]
+
+B --> C[Bronze Ingestion]
+
+C --> D[Move Processed Files]
+
+D --> E[Silver Transformation]
+
+E --> F[Gold Aggregation]
+
+F --> G[Upload Gold to Google Cloud Storage]
+```
+
+---
+
+# Programación del DAG
+
+Durante el desarrollo del proyecto el DAG se encuentra configurado con:
+
+```python
+schedule = None
+```
+
+Esto permite ejecutar manualmente el pipeline y facilitar las pruebas de cada una de las etapas.
+
+En un entorno productivo, el DAG será programado para ejecutarse diariamente a las **09:00 AM**.
+
+```python
+schedule = "0 9 * * *"
+```
+
+---
+
+# Tarea 1 - FileSensor
+
+La primera tarea del DAG utiliza un **FileSensor** para detectar automáticamente la llegada de nuevos archivos CSV.
+
+```python
+FileSensor(
+    fs_conn_id="pre_raw_fs",
+    filepath="pending/*.csv"
+)
+```
+
+El sensor permanece esperando hasta encontrar al menos un archivo dentro de:
+
+```text
+pre-raw/
+
+└── pending/
+```
+
+Este enfoque evita ejecutar el pipeline cuando no existen datos nuevos para procesar.
+
+---
+
+# Tarea 2 - Obtener archivos pendientes
+
+Una vez detectada la existencia de archivos, se obtiene dinámicamente la lista completa de archivos CSV presentes en la carpeta.
+
+```python
+glob("*.csv")
+```
+
+La tarea retorna una lista similar a:
+
+```python
+[
+    "/opt/data/pre-raw/pending/file_01.csv",
+    "/opt/data/pre-raw/pending/file_02.csv",
+    "/opt/data/pre-raw/pending/file_03.csv"
+]
+```
+
+Esta lista será utilizada posteriormente para generar tareas dinámicas.
+
+---
+
+# Tarea 3 - Bronze Ingestion (Dynamic Task Mapping)
+
+Uno de los aspectos más importantes del proyecto es la utilización de **Dynamic Task Mapping**.
+
+En lugar de procesar todos los archivos dentro de una única tarea, Airflow crea automáticamente una tarea independiente para cada archivo detectado.
+
+Por ejemplo, si existen tres archivos:
+
+```text
+crime_2023.csv
+
+crime_2024.csv
+
+crime_2025.csv
+```
+
+Airflow generará automáticamente:
+
+```text
+execute_bronze_ingestion[0]
+
+execute_bronze_ingestion[1]
+
+execute_bronze_ingestion[2]
+```
+
+Cada tarea envía una solicitud HTTP hacia la API desplegada en el Spark Master.
+
+```json
+{
+    "input_file": "...",
+    "phase": "bronze"
+}
+```
+
+De esta manera cada archivo es procesado de forma independiente.
+
+---
+
+# Comunicación mediante API REST
+
+Airflow no ejecuta directamente `spark-submit`.
+
+En su lugar, utiliza un `HttpOperator` para enviar solicitudes HTTP a una API personalizada implementada en el contenedor Spark Master.
+
+```text
+Airflow
+
+↓
+
+POST /submit
+
+↓
+
+Spark API
+
+↓
+
+spark-submit
+
+↓
+
+Apache Spark
+```
+
+Este diseño desacopla Airflow del entorno Spark y evita instalar Spark dentro de los contenedores de Airflow.
+
+---
+
+# Spark API
+
+La API fue desarrollada utilizando el módulo estándar de Python:
+
+```python
+http.server
+```
+
+El endpoint disponible es:
+
+```text
+POST
+
+/submit
+```
+
+Cada solicitud contiene dos parámetros:
+
+```json
+{
+    "input_file": "...",
+    "phase": "bronze"
+}
+```
+
+Dependiendo del valor de `phase`, la API ejecuta uno de los siguientes procesos:
+
+| Phase | Script ejecutado |
+|--------|------------------|
+| bronze | bronze_ingestion.py |
+| silver | silver_transformation.py |
+| gold | gold_aggregation.py |
+
+Internamente la API ejecuta:
+
+```bash
+spark-submit
+```
+
+utilizando `subprocess.run()`.
+
+---
+
+# Respuesta de la API
+
+Una vez finalizada la ejecución de Spark, la API devuelve una respuesta JSON.
+
+Ejemplo de éxito:
+
+```json
+{
+    "status": "SUCCESS",
+    "input_file": "crime_2025.csv"
+}
+```
+
+En caso de error se devuelve el mensaje generado por Spark.
+
+Esta respuesta es utilizada por Airflow para determinar si la siguiente tarea puede continuar.
+
+---
+
+# Tarea 4 - Mover archivos procesados
+
+Después de finalizar correctamente Bronze, el archivo CSV original es movido desde:
+
+```text
+pre-raw/pending/
+```
+
+hacia:
+
+```text
+pre-raw/processed/
+```
+
+Este movimiento evita volver a detectar el mismo archivo en futuras ejecuciones del DAG.
+
+Cada tarea dinámica mueve únicamente el archivo que acaba de procesar.
+
+---
+
+# Tarea 5 - Silver Transformation
+
+Una vez que todos los archivos fueron procesados por Bronze y movidos a la carpeta `processed`, Airflow ejecuta una única tarea correspondiente a la transformación Silver.
+
+La solicitud enviada a la API es:
+
+```json
+{
+    "input_file": "",
+    "phase": "silver"
+}
+```
+
+Silver identifica automáticamente qué archivos permanecen pendientes mediante la tabla de control.
+
+---
+
+# Tarea 6 - Gold Aggregation
+
+Después de finalizar Silver, Airflow ejecuta la agregación Gold.
+
+La solicitud enviada es:
+
+```json
+{
+    "input_file": "",
+    "phase": "gold"
+}
+```
+
+Gold genera las tablas analíticas que posteriormente serán publicadas en Google Cloud Storage.
+
+---
+
+# Tarea 7 - Publicación en Google Cloud Storage
+
+La última tarea del DAG publica automáticamente todas las tablas agregadas en un Bucket de Google Cloud Storage.
+
+Antes de realizar la carga:
+
+- Se elimina el contenido existente dentro de la carpeta `gold/`.
+- Se recorren recursivamente todos los archivos Parquet generados.
+- Se conserva la estructura de carpetas.
+- Cada archivo es cargado nuevamente al Bucket.
+
+Esto garantiza que Google Cloud Storage siempre contenga la versión más reciente de los datos agregados.
+
+---
+
+# Dependencias del DAG
+
+El flujo completo queda definido mediante la siguiente dependencia:
+
+```text
+FileSensor
+
+↓
+
+Get Pending Files
+
+↓
+
+Bronze Ingestion (Dynamic Task Mapping)
+
+↓
+
+Move Processed Files
+
+↓
+
+Silver Transformation
+
+↓
+
+Gold Aggregation
+
+↓
+
+Upload Gold to GCS
+```
+
+Cada etapa comienza únicamente cuando la anterior ha finalizado correctamente.
+
+---
+
+# Capturas recomendadas
+
+Agregar las siguientes imágenes:
+
+📷 Vista Graph del DAG.
+
+📷 Vista Grid del DAG.
+
+📷 Ejecución del Dynamic Task Mapping.
+
+📷 Logs de una tarea Bronze.
+
+📷 Logs de Silver.
+
+📷 Logs de Gold.
+
+📷 Ejecución exitosa del DAG.
+
+---
+
+# Consideraciones de diseño
+
+La orquestación fue diseñada siguiendo un enfoque desacoplado, donde Apache Airflow se limita a coordinar la ejecución del pipeline, mientras que todo el procesamiento distribuido es delegado a Apache Spark mediante una API REST personalizada.
+
+El uso de **Dynamic Task Mapping** permite escalar el procesamiento de forma automática conforme aumenta el número de archivos de entrada, evitando la necesidad de modificar el DAG para manejar múltiples archivos.
+
+Asimismo, la separación entre Airflow y Spark simplifica la arquitectura de los contenedores Docker, reduce dependencias entre servicios y facilita el mantenimiento del proyecto.
