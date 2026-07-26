@@ -95,7 +95,7 @@ Por restricciones de seguridad, no es posible compartir el enlace. Sin embargo, 
 
 ### Arquitectura
 
-> 📷 **Insertar aquí una imagen de la arquitectura del proyecto.**
+![Arquitectura](img/arquitectura.png)
 
 ---
 
