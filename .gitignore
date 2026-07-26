@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Environment variables
+.env
+
+# Google credentials
+credenciales_gcs.json
+
+# Airflow
+logs/
+airflow.db
+
+# Plugins
+plugins/
+
+# VS Code
+.vscode/
+
+# Mac
+.DS_Store
+
+# Files docx
+*.docx
+
+# Files Parquet
+_SUCCESS
+*.crc
+*.parquet
+
+# Original File: 8 000 000 records
+Crimes_2001_to_Present_20260628.csv
