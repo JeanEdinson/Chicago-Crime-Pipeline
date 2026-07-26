@@ -60,7 +60,7 @@ if fs.exists(path_table_control) and spark.read.parquet(str(path_local_table_con
     df_silver_columns_selected = df_silver_data_rename_columns.select('file_source', 'id', 'date', 'block', 'primary_type', 'description', 'arrest', 'domestic', 'beat', 'district', 'ward', 'community_area', 'latitude', 'longitude', 'year')
 
     # Remove duplicate records / Eliminar registros duplicados
-    df_silver_columns_selected.dropDuplicates(["id"])
+    df_silver_columns_selected = df_silver_columns_selected.dropDuplicates(["id"])
 
     # Change the data type of the date column / Cambiar tipo de dato a la columna de fecha
     df_silver_columns_selected = df_silver_columns_selected.withColumn("date", f.to_date(f.col("date"), "MM/dd/yyyy hh:mm:ss a"))
