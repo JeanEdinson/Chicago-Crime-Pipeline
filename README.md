@@ -65,7 +65,7 @@ El proyecto utiliza el dataset público:
 
 **Crimes - 2001 to Present**
 
-Este conjunto de datos contiene información histórica de incidentes criminales reportados por el Departamento de Policía de Chicago desde el año 2001.
+Este conjunto de datos contiene información histórica de incidentes criminales reportados por la ciudad de Chicago desde el año 2001.
 
 Características generales del dataset:
 
@@ -87,6 +87,8 @@ Características generales del dataset:
 
 Por restricciones de seguridad, no es posible compartir el enlace. Sin embargo, basta con buscar “chicago crime data 2001 to present” en Google; el primer resultado contiene el dataset.
 
+![Busqueda en Google](img/captura_busqueda_dataset_google.png)
+
 ---
 
 ## 📸 Vista general del proyecto
@@ -99,19 +101,19 @@ Por restricciones de seguridad, no es posible compartir el enlace. Sin embargo, 
 
 ### Contenedores Docker
 
-> 📷 **Insertar aquí una captura mostrando todos los contenedores ejecutándose.**
+![Contenedores Docker](img/contenedores_docker.png)
 
 ---
 
 ### DAG ejecutándose en Apache Airflow
 
-> 📷 **Insertar aquí una captura del DAG en Graph View.**
+![Dag en Airflow](img/dag_en_UI_airflow.png)
 
 ---
 
 ### Google Cloud Storage
 
-> 📷 **Insertar aquí una captura del bucket con la carpeta Gold.**
+![Bucket en GCS](img/bucket_GCS.png)
 
 ---
 
@@ -243,8 +245,6 @@ Chicago-Crime-Pipeline/
 └── README.md
 ```
 
-> 📷 **Insertar aquí una captura del árbol real del proyecto.**
-
 ---
 
 # 📁 Organización de la carpeta `data`
@@ -308,15 +308,6 @@ Gracias a esta tabla:
 Este mecanismo evita reprocesar archivos ya tratados y mantiene un flujo incremental entre las distintas capas.
 
 ---
-
-# 📷 Capturas recomendadas
-
-Agregar las siguientes imágenes en esta sección:
-
-- Arquitectura del proyecto.
-- Árbol del proyecto.
-- Estructura de la carpeta `data`.
-- Contenido de la tabla de control después de ejecutar el DAG.
 
 # 🥉 Capa Bronze
 
@@ -532,20 +523,6 @@ metadata/
 
 table_control/
 ```
-
----
-
-# Capturas recomendadas
-
-Agregar las siguientes imágenes:
-
-📷 Esquema del archivo CSV.
-
-📷 Carpeta Bronze particionada por Year.
-
-📷 Contenido de la tabla de control después del procesamiento.
-
-📷 Spark UI mostrando el Job correspondiente a Bronze.
 
 ---
 
@@ -885,20 +862,6 @@ junto con una tabla de control actualizada.
 
 ---
 
-# Capturas recomendadas
-
-Agregar las siguientes imágenes:
-
-📷 Datos almacenados en la carpeta Silver.
-
-📷 Ejemplo del contenido de un archivo Parquet.
-
-📷 Tabla de control con `status_silver = True`.
-
-📷 Spark UI mostrando el Job de transformación.
-
----
-
 # Consideraciones de diseño
 
 La lógica implementada en Silver sigue un enfoque incremental apoyado en una tabla de control, evitando reprocesamientos innecesarios.
@@ -1178,20 +1141,6 @@ El pipeline produce actualmente cuatro conjuntos de indicadores.
 | n_indicators_day | Delitos, arrestos y delitos domésticos por día de la semana. |
 | n_indicators_location | Indicadores geográficos por comunidad, distrito, beat y bloque. |
 | ranking_year_primary_type | Ranking anual de los delitos con menor incidencia. |
-
----
-
-# Capturas recomendadas
-
-Agregar las siguientes imágenes:
-
-📷 Carpeta `gold_level`.
-
-📷 Contenido de cada tabla agregada.
-
-📷 Ejemplo de un archivo Parquet de Gold.
-
-📷 Spark UI mostrando el Job de agregación.
 
 ---
 
@@ -1541,26 +1490,6 @@ Cada etapa comienza únicamente cuando la anterior ha finalizado correctamente.
 
 ---
 
-# Capturas recomendadas
-
-Agregar las siguientes imágenes:
-
-📷 Vista Graph del DAG.
-
-📷 Vista Grid del DAG.
-
-📷 Ejecución del Dynamic Task Mapping.
-
-📷 Logs de una tarea Bronze.
-
-📷 Logs de Silver.
-
-📷 Logs de Gold.
-
-📷 Ejecución exitosa del DAG.
-
----
-
 # Consideraciones de diseño
 
 La orquestación fue diseñada siguiendo un enfoque desacoplado, donde Apache Airflow se limita a coordinar la ejecución del pipeline, mientras que todo el procesamiento distribuido es delegado a Apache Spark mediante una API REST personalizada.
@@ -1847,24 +1776,6 @@ docker ps
 docker compose down
 ```
 
----
-
-# Capturas recomendadas
-
-Agregar las siguientes imágenes:
-
-📷 Salida de `docker ps`.
-
-📷 Docker Desktop mostrando todos los contenedores.
-
-📷 Spark Master UI.
-
-📷 Airflow UI.
-
-📷 Estructura de volúmenes compartidos.
-
----
-
 # Consideraciones de diseño
 
 Se optó por una arquitectura basada en Docker Compose para facilitar la portabilidad y reproducibilidad del entorno de desarrollo.
@@ -1955,11 +1866,7 @@ Crear una nueva conexión con la siguiente configuración.
 
 Esta conexión será utilizada por el `FileSensor` para detectar nuevos archivos CSV.
 
----
-
-## Captura recomendada
-
-📷 Configuración de la conexión **pre_raw_fs**.
+![Conexión Pre Raw](img/conn_pre_raw.png)
 
 ---
 
@@ -1976,11 +1883,7 @@ Crear una segunda conexión.
 
 Esta conexión permite que Airflow envíe solicitudes HTTP hacia la API REST desplegada en el Spark Master.
 
----
-
-## Captura recomendada
-
-📷 Configuración de la conexión **spark_api**.
+![Conexión Spark API](img/conn_spark_api.png)
 
 ---
 
@@ -1997,11 +1900,7 @@ En esta conexión deberán configurarse las credenciales correspondientes a la c
 
 La autenticación puede realizarse utilizando un archivo JSON de Service Account o cualquier otro método soportado por Apache Airflow.
 
----
-
-## Captura recomendada
-
-📷 Configuración de la conexión **gcs_connection_chicago_crime**.
+![Conexión GCS](img/conn_GCS.png)
 
 ---
 
@@ -2026,10 +1925,6 @@ bucket_name = "crime-chicago-bucket"
 # 8. Descargar el dataset
 
 El dataset original no se incluye en este repositorio debido a su tamaño (más de **8 millones de registros**).
-
-Puede descargarse desde:
-
-> 🔗 **[Agregar aquí la URL oficial del dataset]**
 
 Una vez descargado, copiar los archivos CSV dentro de:
 
@@ -2106,22 +2001,6 @@ Además:
 
 ---
 
-# Capturas recomendadas
-
-Agregar las siguientes imágenes:
-
-📷 DAG ejecutado correctamente.
-
-📷 Carpeta `processed`.
-
-📷 Contenido de `gold_level`.
-
-📷 Bucket de Google Cloud Storage con las tablas agregadas.
-
-📷 Tabla de control actualizada.
-
----
-
 # Verificación rápida
 
 Antes de ejecutar el proyecto, verificar que se cumpla la siguiente lista.
@@ -2159,17 +2038,6 @@ Como mejora futura se plantea migrar el almacenamiento a **Delta Lake**, permiti
 - Compactación automática de archivos.
 
 ---
-
-## Procesamiento incremental en la capa Gold
-
-Actualmente la capa Gold reconstruye completamente todas las tablas agregadas en cada ejecución.
-
-Como mejora, podría implementarse un procesamiento incremental que únicamente agregue la información correspondiente a los nuevos archivos procesados.
-
-Esto reduciría considerablemente el tiempo de ejecución del pipeline para cargas de gran volumen.
-
----
-
 ## Optimización del particionamiento
 
 Actualmente Bronze y Silver se encuentran particionadas únicamente por:
@@ -2199,106 +2067,6 @@ Por ejemplo:
 - Pruebas de calidad de datos.
 - Validación de indicadores generados.
 - Pruebas de la API REST.
-
----
-
-## Integración continua (CI/CD)
-
-Como siguiente paso, el repositorio podría incorporar un pipeline de integración continua utilizando GitHub Actions.
-
-Entre las tareas automatizadas podrían incluirse:
-
-- Verificación de formato del código.
-- Análisis estático.
-- Ejecución de pruebas automáticas.
-- Construcción de imágenes Docker.
-- Despliegue automático.
-
----
-
-## Contenerización independiente de la API
-
-Actualmente la API REST se ejecuta dentro del contenedor Spark Master.
-
-Como mejora arquitectónica podría desplegarse en un contenedor independiente.
-
-Esto permitiría:
-
-- Escalar la API de forma independiente.
-- Separar responsabilidades.
-- Facilitar el mantenimiento del sistema.
-
----
-
-## Despliegue en Kubernetes
-
-Una evolución natural del proyecto sería migrar la infraestructura desde Docker Compose hacia Kubernetes.
-
-Esto permitiría:
-
-- Alta disponibilidad.
-- Escalado automático.
-- Gestión avanzada de recursos.
-- Recuperación automática ante fallos.
-
----
-
-## Incorporar monitoreo
-
-Otra mejora consiste en implementar herramientas de observabilidad.
-
-Por ejemplo:
-
-- Prometheus.
-- Grafana.
-
-Con ello sería posible monitorear:
-
-- Tiempo de ejecución de los DAGs.
-- Consumo de memoria.
-- Uso de CPU.
-- Estado del clúster Spark.
-- Rendimiento de los Jobs.
-
----
-
-## Implementar Data Quality
-
-Podrían incorporarse validaciones automáticas utilizando herramientas especializadas como:
-
-- Great Expectations.
-- Soda Core.
-
-Algunas reglas posibles serían:
-
-- Valores obligatorios.
-- Rangos permitidos.
-- Detección de duplicados.
-- Validación de tipos de datos.
-- Consistencia entre capas.
-
----
-
-## Integración con BigQuery
-
-Actualmente los datos agregados se publican en Google Cloud Storage.
-
-Como evolución del proyecto, las tablas de la capa Gold podrían cargarse automáticamente en **BigQuery**, permitiendo realizar consultas SQL directamente desde la plataforma de Google Cloud e integrarse fácilmente con herramientas de visualización como Looker Studio.
-
----
-
-## Dashboard analítico
-
-Una mejora orientada al consumo de información consiste en desarrollar un dashboard interactivo utilizando Power BI o Looker Studio para visualizar los indicadores generados por la capa Gold.
-
-Entre las visualizaciones podrían incluirse:
-
-- Evolución anual de los delitos.
-- Ranking de tipos de crimen.
-- Distribución geográfica.
-- Indicadores de arrestos.
-- Delitos domésticos por día de la semana.
-- Mapas interactivos.
 
 ---
 
