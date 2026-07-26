@@ -1568,3 +1568,761 @@ La orquestación fue diseñada siguiendo un enfoque desacoplado, donde Apache Ai
 El uso de **Dynamic Task Mapping** permite escalar el procesamiento de forma automática conforme aumenta el número de archivos de entrada, evitando la necesidad de modificar el DAG para manejar múltiples archivos.
 
 Asimismo, la separación entre Airflow y Spark simplifica la arquitectura de los contenedores Docker, reduce dependencias entre servicios y facilita el mantenimiento del proyecto.
+
+# 🐳 Infraestructura con Docker Compose
+
+## Objetivo
+
+Todo el proyecto se ejecuta mediante **Docker Compose**, lo que permite levantar un entorno completo de procesamiento distribuido con un solo comando.
+
+La infraestructura está compuesta por siete contenedores principales que trabajan de manera coordinada para ejecutar el pipeline de datos.
+
+```text
+docker-compose.yml
+```
+
+---
+
+# Arquitectura de la infraestructura
+
+```mermaid
+flowchart LR
+
+A[Apache Airflow Webserver]
+
+B[Apache Airflow Scheduler]
+
+C[PostgreSQL]
+
+D[Spark Master]
+
+E[Spark Worker 1]
+
+F[Spark Worker 2]
+
+G[Google Cloud Storage]
+
+A <---> B
+
+A --> D
+
+B --> D
+
+D --> E
+
+D --> F
+
+D --> G
+
+A --> C
+
+B --> C
+```
+
+---
+
+# Contenedores del proyecto
+
+| Contenedor | Función |
+|------------|----------|
+| PostgreSQL | Base de datos de metadatos de Airflow |
+| Airflow Init | Inicialización de la base de datos y creación del usuario administrador |
+| Airflow Webserver | Interfaz gráfica de Apache Airflow |
+| Airflow Scheduler | Programación y ejecución del DAG |
+| Spark Master | Coordinación del clúster Spark y ejecución de la API REST |
+| Spark Worker 1 | Procesamiento distribuido de tareas Spark |
+| Spark Worker 2 | Procesamiento distribuido de tareas Spark |
+
+---
+
+# PostgreSQL
+
+El contenedor PostgreSQL almacena toda la información interna de Apache Airflow.
+
+Entre ella:
+
+- DAGs registrados.
+- Historial de ejecuciones.
+- Estados de las tareas.
+- Conexiones configuradas.
+- Variables.
+- Usuarios.
+
+Configuración utilizada:
+
+```text
+PostgreSQL 16
+```
+
+---
+
+# Airflow Init
+
+Este contenedor se ejecuta una única vez.
+
+Su función consiste en:
+
+- Esperar a que PostgreSQL esté disponible.
+- Inicializar la base de datos de Airflow.
+- Ejecutar las migraciones.
+- Crear el usuario administrador.
+
+Una vez completada la inicialización, el contenedor deja de utilizarse.
+
+---
+
+# Airflow Webserver
+
+Proporciona la interfaz web utilizada para administrar el pipeline.
+
+Desde esta interfaz es posible:
+
+- Ejecutar DAGs.
+- Consultar Logs.
+- Configurar conexiones.
+- Visualizar el Graph View.
+- Revisar el Grid View.
+- Monitorear las ejecuciones.
+
+El servicio queda disponible mediante:
+
+```text
+http://localhost:8088
+```
+
+---
+
+# Airflow Scheduler
+
+El Scheduler supervisa continuamente los DAGs registrados.
+
+Entre sus responsabilidades se encuentran:
+
+- Detectar nuevas ejecuciones.
+- Lanzar tareas.
+- Gestionar dependencias.
+- Ejecutar Dynamic Task Mapping.
+- Coordinar todo el flujo del pipeline.
+
+---
+
+# Spark Master
+
+El Spark Master coordina todo el clúster Apache Spark.
+
+Dentro de este contenedor también se ejecuta la API REST personalizada desarrollada para el proyecto.
+
+La API escucha en:
+
+```text
+http://localhost:8000
+```
+
+Mientras que la interfaz del Spark Master se encuentra en:
+
+```text
+http://localhost:8080
+```
+
+---
+
+# Spark Workers
+
+El proyecto utiliza dos Workers.
+
+```text
+spark-worker-1
+
+spark-worker-2
+```
+
+Cada Worker dispone de:
+
+- 2 CPU Cores
+- 4 GB de memoria
+
+Los Workers reciben las tareas distribuidas enviadas por el Spark Master durante la ejecución de los distintos procesos de ingestión, transformación y agregación.
+
+---
+
+# Volúmenes compartidos
+
+Los contenedores comparten distintos directorios mediante Docker Volumes.
+
+```text
+./app
+
+↓
+
+/opt/spark-app
+```
+
+Contiene todo el código fuente del proyecto.
+
+---
+
+```text
+./data
+
+↓
+
+/opt/data
+```
+
+Almacena:
+
+- Pre Raw
+- Bronze
+- Silver
+- Gold
+- Metadata
+
+---
+
+```text
+./dags
+
+↓
+
+/opt/airflow/dags
+```
+
+Contiene los DAGs de Apache Airflow.
+
+---
+
+```text
+./logs
+
+↓
+
+/opt/airflow/logs
+```
+
+Almacena los logs de ejecución de Airflow.
+
+---
+
+# Red de comunicación
+
+Todos los contenedores pertenecen a la misma red creada automáticamente por Docker Compose.
+
+Gracias a ello pueden comunicarse utilizando el nombre del servicio como hostname.
+
+Por ejemplo:
+
+```text
+spark-master-chicago-crime
+```
+
+es utilizado por:
+
+- Spark Workers.
+- Apache Airflow.
+- Spark API.
+
+sin necesidad de utilizar direcciones IP.
+
+---
+
+# Levantar el proyecto
+
+Una vez clonado el repositorio basta con ejecutar:
+
+```bash
+docker compose up -d
+```
+
+Posteriormente pueden verificarse los contenedores activos mediante:
+
+```bash
+docker ps
+```
+
+---
+
+# Detener el proyecto
+
+```bash
+docker compose down
+```
+
+---
+
+# Capturas recomendadas
+
+Agregar las siguientes imágenes:
+
+📷 Salida de `docker ps`.
+
+📷 Docker Desktop mostrando todos los contenedores.
+
+📷 Spark Master UI.
+
+📷 Airflow UI.
+
+📷 Estructura de volúmenes compartidos.
+
+---
+
+# Consideraciones de diseño
+
+Se optó por una arquitectura basada en Docker Compose para facilitar la portabilidad y reproducibilidad del entorno de desarrollo.
+
+La separación de responsabilidades entre Airflow, PostgreSQL y Apache Spark permite mantener una arquitectura modular, donde cada servicio cumple una función específica y puede evolucionar de forma independiente.
+
+Además, el uso de volúmenes compartidos garantiza que tanto Airflow como Spark accedan al mismo código fuente y a los mismos datos, simplificando la orquestación del pipeline y evitando duplicidad de información.
+
+# ⚙️ Configuración del proyecto
+
+Una vez clonado el repositorio, es necesario realizar una serie de configuraciones antes de ejecutar el pipeline.
+
+---
+
+# 1. Clonar el repositorio
+
+```bash
+git clone https://github.com/TU_USUARIO/TU_REPOSITORIO.git
+
+cd TU_REPOSITORIO
+```
+
+---
+
+# 2. Iniciar los contenedores
+
+Levantar todos los servicios definidos en `docker-compose.yml`.
+
+```bash
+docker compose up -d
+```
+
+Verificar que todos los contenedores se encuentren ejecutándose.
+
+```bash
+docker ps
+```
+
+Deberían aparecer los siguientes servicios:
+
+- airflow-postgres-chicago-crime
+- airflow-webserver-chicago-crime
+- airflow-scheduler-chicago-crime
+- airflow-init-chicago-crime
+- spark-master-chicago-crime
+- spark-worker-1-chicago-crime
+- spark-worker-2-chicago-crime
+
+---
+
+# 3. Acceder a Apache Airflow
+
+Abrir el navegador.
+
+```text
+http://localhost:8088
+```
+
+Credenciales por defecto:
+
+| Usuario | Contraseña |
+|----------|------------|
+| airflow | airflow |
+
+> Estas credenciales son creadas automáticamente por el contenedor `airflow-init`.
+
+---
+
+# 4. Configurar la conexión del FileSensor
+
+Ir a:
+
+```text
+Admin
+
+↓
+
+Connections
+```
+
+Crear una nueva conexión con la siguiente configuración.
+
+| Campo | Valor |
+|--------|-------|
+| Connection Id | pre_raw_fs |
+| Connection Type | File (Path) |
+| Path | /opt/data/pre-raw |
+
+Esta conexión será utilizada por el `FileSensor` para detectar nuevos archivos CSV.
+
+---
+
+## Captura recomendada
+
+📷 Configuración de la conexión **pre_raw_fs**.
+
+---
+
+# 5. Configurar la conexión HTTP
+
+Crear una segunda conexión.
+
+| Campo | Valor |
+|--------|-------|
+| Connection Id | spark_api |
+| Connection Type | HTTP |
+| Host | spark-master-chicago-crime |
+| Port | 8000 |
+
+Esta conexión permite que Airflow envíe solicitudes HTTP hacia la API REST desplegada en el Spark Master.
+
+---
+
+## Captura recomendada
+
+📷 Configuración de la conexión **spark_api**.
+
+---
+
+# 6. Configurar la conexión con Google Cloud
+
+Crear una tercera conexión.
+
+| Campo | Valor |
+|--------|-------|
+| Connection Id | gcs_connection_chicago_crime |
+| Connection Type | Google Cloud |
+
+En esta conexión deberán configurarse las credenciales correspondientes a la cuenta de servicio con permisos sobre el Bucket de Google Cloud Storage.
+
+La autenticación puede realizarse utilizando un archivo JSON de Service Account o cualquier otro método soportado por Apache Airflow.
+
+---
+
+## Captura recomendada
+
+📷 Configuración de la conexión **gcs_connection_chicago_crime**.
+
+---
+
+# 7. Crear el Bucket de Google Cloud Storage
+
+Crear un Bucket en Google Cloud Storage.
+
+Ejemplo:
+
+```text
+crime-chicago-bucket
+```
+
+Este nombre debe coincidir con el utilizado dentro del DAG.
+
+```python
+bucket_name = "crime-chicago-bucket"
+```
+
+---
+
+# 8. Descargar el dataset
+
+El dataset original no se incluye en este repositorio debido a su tamaño (más de **8 millones de registros**).
+
+Puede descargarse desde:
+
+> 🔗 **[Agregar aquí la URL oficial del dataset]**
+
+Una vez descargado, copiar los archivos CSV dentro de:
+
+```text
+data/
+
+└── pre-raw/
+
+    └── pending/
+```
+
+---
+
+# 9. Ejecutar el DAG
+
+Ingresar a Apache Airflow.
+
+Habilitar el DAG.
+
+```text
+chicago_crime_dag
+```
+
+Ejecutarlo manualmente mediante:
+
+```text
+Trigger DAG
+```
+
+Durante el desarrollo el DAG permanece configurado como:
+
+```python
+schedule = None
+```
+
+para facilitar las pruebas.
+
+En un entorno productivo se recomienda utilizar una programación diaria, por ejemplo:
+
+```python
+schedule = "0 9 * * *"
+```
+
+lo que ejecutará el pipeline automáticamente todos los días a las **09:00 AM**.
+
+---
+
+# 10. Resultado esperado
+
+Al finalizar correctamente la ejecución del pipeline se obtendrá la siguiente estructura.
+
+```text
+pre-raw/
+
+├── pending/
+
+└── processed/
+
+bronze_level/
+
+silver_level/
+
+gold_level/
+
+metadata/
+```
+
+Además:
+
+- Los archivos CSV habrán sido movidos a `processed/`.
+- La tabla de control tendrá todos los estados actualizados.
+- Las tablas agregadas estarán disponibles en `gold_level/`.
+- El contenido de la capa Gold habrá sido publicado en Google Cloud Storage.
+
+---
+
+# Capturas recomendadas
+
+Agregar las siguientes imágenes:
+
+📷 DAG ejecutado correctamente.
+
+📷 Carpeta `processed`.
+
+📷 Contenido de `gold_level`.
+
+📷 Bucket de Google Cloud Storage con las tablas agregadas.
+
+📷 Tabla de control actualizada.
+
+---
+
+# Verificación rápida
+
+Antes de ejecutar el proyecto, verificar que se cumpla la siguiente lista.
+
+- Docker Desktop en ejecución.
+- Todos los contenedores iniciados.
+- Airflow accesible desde el navegador.
+- Spark Master disponible.
+- Conexión `pre_raw_fs` creada.
+- Conexión `spark_api` creada.
+- Conexión `gcs_connection_chicago_crime` creada.
+- Dataset copiado en `pre-raw/pending`.
+- Bucket de Google Cloud Storage creado.
+- DAG habilitado en Airflow.
+
+Con esta configuración, el pipeline quedará listo para ejecutarse de forma completamente automatizada.
+
+# 🚀 Mejoras futuras (Roadmap)
+
+Aunque el pipeline implementado cumple con el objetivo de construir una arquitectura Medallion completamente funcional utilizando Apache Spark, Apache Airflow y Google Cloud Storage, existen diversas oportunidades de mejora para acercarlo aún más a un entorno de producción.
+
+---
+
+## Implementar Delta Lake
+
+Actualmente las capas Bronze, Silver y Gold almacenan la información en formato Parquet.
+
+Como mejora futura se plantea migrar el almacenamiento a **Delta Lake**, permitiendo aprovechar funcionalidades como:
+
+- Transacciones ACID.
+- Time Travel.
+- Schema Evolution.
+- Upserts mediante `MERGE`.
+- Mejor rendimiento en consultas.
+- Compactación automática de archivos.
+
+---
+
+## Procesamiento incremental en la capa Gold
+
+Actualmente la capa Gold reconstruye completamente todas las tablas agregadas en cada ejecución.
+
+Como mejora, podría implementarse un procesamiento incremental que únicamente agregue la información correspondiente a los nuevos archivos procesados.
+
+Esto reduciría considerablemente el tiempo de ejecución del pipeline para cargas de gran volumen.
+
+---
+
+## Optimización del particionamiento
+
+Actualmente Bronze y Silver se encuentran particionadas únicamente por:
+
+```text
+Year
+```
+
+Dependiendo del patrón de consultas, podría evaluarse un particionamiento adicional utilizando columnas como:
+
+- Primary Type
+- District
+- Community Area
+
+con el objetivo de mejorar el rendimiento de lectura.
+
+---
+
+## Incorporar pruebas automáticas
+
+El proyecto puede fortalecerse incorporando pruebas unitarias e integrales para validar cada etapa del pipeline.
+
+Por ejemplo:
+
+- Validación del esquema de entrada.
+- Verificación del número de registros procesados.
+- Pruebas de calidad de datos.
+- Validación de indicadores generados.
+- Pruebas de la API REST.
+
+---
+
+## Integración continua (CI/CD)
+
+Como siguiente paso, el repositorio podría incorporar un pipeline de integración continua utilizando GitHub Actions.
+
+Entre las tareas automatizadas podrían incluirse:
+
+- Verificación de formato del código.
+- Análisis estático.
+- Ejecución de pruebas automáticas.
+- Construcción de imágenes Docker.
+- Despliegue automático.
+
+---
+
+## Contenerización independiente de la API
+
+Actualmente la API REST se ejecuta dentro del contenedor Spark Master.
+
+Como mejora arquitectónica podría desplegarse en un contenedor independiente.
+
+Esto permitiría:
+
+- Escalar la API de forma independiente.
+- Separar responsabilidades.
+- Facilitar el mantenimiento del sistema.
+
+---
+
+## Despliegue en Kubernetes
+
+Una evolución natural del proyecto sería migrar la infraestructura desde Docker Compose hacia Kubernetes.
+
+Esto permitiría:
+
+- Alta disponibilidad.
+- Escalado automático.
+- Gestión avanzada de recursos.
+- Recuperación automática ante fallos.
+
+---
+
+## Incorporar monitoreo
+
+Otra mejora consiste en implementar herramientas de observabilidad.
+
+Por ejemplo:
+
+- Prometheus.
+- Grafana.
+
+Con ello sería posible monitorear:
+
+- Tiempo de ejecución de los DAGs.
+- Consumo de memoria.
+- Uso de CPU.
+- Estado del clúster Spark.
+- Rendimiento de los Jobs.
+
+---
+
+## Implementar Data Quality
+
+Podrían incorporarse validaciones automáticas utilizando herramientas especializadas como:
+
+- Great Expectations.
+- Soda Core.
+
+Algunas reglas posibles serían:
+
+- Valores obligatorios.
+- Rangos permitidos.
+- Detección de duplicados.
+- Validación de tipos de datos.
+- Consistencia entre capas.
+
+---
+
+## Integración con BigQuery
+
+Actualmente los datos agregados se publican en Google Cloud Storage.
+
+Como evolución del proyecto, las tablas de la capa Gold podrían cargarse automáticamente en **BigQuery**, permitiendo realizar consultas SQL directamente desde la plataforma de Google Cloud e integrarse fácilmente con herramientas de visualización como Looker Studio.
+
+---
+
+## Dashboard analítico
+
+Una mejora orientada al consumo de información consiste en desarrollar un dashboard interactivo utilizando Power BI o Looker Studio para visualizar los indicadores generados por la capa Gold.
+
+Entre las visualizaciones podrían incluirse:
+
+- Evolución anual de los delitos.
+- Ranking de tipos de crimen.
+- Distribución geográfica.
+- Indicadores de arrestos.
+- Delitos domésticos por día de la semana.
+- Mapas interactivos.
+
+---
+
+# Lecciones aprendidas
+
+Durante el desarrollo de este proyecto fue posible profundizar en diferentes conceptos relacionados con la Ingeniería de Datos, entre ellos:
+
+- Diseño de una arquitectura Medallion.
+- Procesamiento distribuido con Apache Spark.
+- Optimización mediante particionamiento y Broadcast Join.
+- Orquestación de pipelines con Apache Airflow.
+- Dynamic Task Mapping.
+- Comunicación entre servicios mediante APIs REST.
+- Gestión incremental utilizando tablas de control.
+- Contenerización con Docker Compose.
+- Integración con Google Cloud Storage.
+- Construcción de pipelines escalables y desacoplados.
+
+---
+
+# Autor
+
+**Jean Edinson**
+
+Si este proyecto te resultó interesante o tienes alguna sugerencia de mejora, no dudes en abrir un **Issue** o enviar un **Pull Request**.
+
+¡Toda contribución es bienvenida!
