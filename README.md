@@ -114,3 +114,206 @@ Por restricciones de seguridad, no es posible compartir el enlace. Sin embargo, 
 > 📷 **Insertar aquí una captura del bucket con la carpeta Gold.**
 
 ---
+
+# 🏗️ Arquitectura del proyecto
+
+El proyecto implementa una arquitectura de datos basada en el patrón **Medallion**, donde la información fluye de manera incremental a través de tres capas principales:
+
+- **Bronze:** almacenamiento de los datos crudos.
+- **Silver:** limpieza, estandarización y transformación de los datos.
+- **Gold:** generación de tablas agregadas para análisis.
+
+Todo el flujo es orquestado mediante **Apache Airflow**, mientras que el procesamiento distribuido es realizado por **Apache Spark**.
+
+La ejecución de los procesos Spark se realiza mediante una **API REST personalizada** desplegada dentro del contenedor **Spark Master**, evitando instalar Spark en los contenedores de Airflow.
+
+---
+
+# 🏛️ Arquitectura general
+
+```mermaid
+flowchart LR
+
+A[CSV Files] --> B[FileSensor]
+
+B --> C[Apache Airflow]
+
+C --> D[Bronze Ingestion]
+
+D --> E[(Bronze Layer)]
+
+E --> F[Silver Transformation]
+
+F --> G[(Silver Layer)]
+
+G --> H[Gold Aggregation]
+
+H --> I[(Gold Layer)]
+
+I --> J[Google Cloud Storage]
+```
+
+---
+
+# 🔄 Flujo de procesamiento
+
+```mermaid
+flowchart TD
+
+A[CSV en pre-raw/pending]
+
+A --> B[FileSensor]
+
+B --> C[Get Pending Files]
+
+C --> D[Dynamic Task Mapping]
+
+D --> E[Bronze Ingestion]
+
+E --> F[Mover archivo a processed]
+
+F --> G[Silver Transformation]
+
+G --> H[Gold Aggregation]
+
+H --> I[Upload Gold to Google Cloud Storage]
+```
+
+---
+
+# 🛠️ Tecnologías utilizadas
+
+| Tecnología | Uso dentro del proyecto |
+|------------|-------------------------|
+| Python 3.12 | Desarrollo del pipeline |
+| Apache Spark 3.5.1 | Procesamiento distribuido |
+| PySpark | Transformaciones de datos |
+| Apache Airflow 2.10 | Orquestación |
+| Docker | Contenedorización |
+| Docker Compose | Levantamiento del entorno |
+| PostgreSQL | Base de datos de Airflow |
+| Google Cloud Storage | Almacenamiento de la capa Gold |
+| Hadoop FileSystem API | Verificación de existencia de archivos y directorios |
+| REST API | Ejecución remota de Spark Jobs |
+
+---
+
+# 📂 Estructura del proyecto
+
+El repositorio contiene únicamente el código fuente y una pequeña muestra de datos para facilitar las pruebas.
+
+```text
+Chicago-Crime-Pipeline/
+│
+├── app/
+│   ├── aggregation/
+│   │   └── gold_aggregation.py
+│   │
+│   ├── ingestion/
+│   │   └── bronze_ingestion.py
+│   │
+│   ├── transformation/
+│   │   └── silver_transformation.py
+│   │
+│   └── spark_api.py
+│
+├── dags/
+│   └── chicago_crime_orchestration.py
+│
+├── data/
+│   ├── pre-raw/
+│   │   ├── pending/
+│   │   └── processed/
+│   │
+│   ├── bronze_level/
+│   │
+│   ├── silver_level/
+│   │
+│   ├── gold_level/
+│   │
+│   └── metadata/
+│       └── table_control/
+│
+├── logs/
+│
+├── plugins/
+│
+├── docker-compose.yml
+│
+└── README.md
+```
+
+> 📷 **Insertar aquí una captura del árbol real del proyecto.**
+
+---
+
+# 📁 Organización de la carpeta `data`
+
+Durante la ejecución del pipeline, la carpeta `data` almacena todas las capas de la arquitectura Medallion.
+
+```text
+data/
+
+pre-raw/
+│
+├── pending/
+│      Archivos CSV pendientes de procesar.
+│
+└── processed/
+       Archivos CSV ya procesados por Bronze.
+
+bronze_level/
+│
+└── Archivos Parquet particionados por Year.
+
+silver_level/
+│
+└── Archivos Parquet transformados.
+
+gold_level/
+│
+├── n_crimes_arrests_year/
+├── n_indicators_day/
+├── n_indicators_location/
+└── ranking_year_primary_type/
+
+metadata/
+│
+└── table_control/
+```
+
+La carpeta `metadata` contiene la tabla de control utilizada para conocer qué archivos ya fueron procesados por cada una de las capas del pipeline.
+
+---
+
+# 📋 Tabla de control
+
+Uno de los componentes más importantes del proyecto es la **tabla de control**, utilizada para implementar un procesamiento incremental.
+
+Cada archivo procesado genera un registro con el siguiente esquema:
+
+| Columna | Descripción |
+|----------|-------------|
+| `file_source` | Nombre del archivo CSV procesado. |
+| `status_bronze` | Indica si el archivo fue procesado por Bronze. |
+| `status_silver` | Indica si el archivo fue procesado por Silver. |
+| `status_gold` | Indica si el archivo ya fue considerado en Gold. |
+
+Gracias a esta tabla:
+
+- Bronze registra cada nuevo archivo procesado.
+- Silver procesa únicamente archivos con `status_silver = False`.
+- Gold actualiza el estado de los archivos una vez finaliza la agregación.
+
+Este mecanismo evita reprocesar archivos ya tratados y mantiene un flujo incremental entre las distintas capas.
+
+---
+
+# 📷 Capturas recomendadas
+
+Agregar las siguientes imágenes en esta sección:
+
+- Arquitectura del proyecto.
+- Árbol del proyecto.
+- Estructura de la carpeta `data`.
+- Contenido de la tabla de control después de ejecutar el DAG.
