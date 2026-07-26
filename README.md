@@ -1533,8 +1533,6 @@ G[Google Cloud Storage]
 
 A <---> B
 
-A --> D
-
 B --> D
 
 D --> E
