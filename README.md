@@ -1519,7 +1519,7 @@ flowchart LR
 
 A[Apache Airflow Webserver]
 
-B[Apache Airflow Scheduler]
+B[Apache Airflow Scheduler & Worker]
 
 C[PostgreSQL]
 
@@ -1529,21 +1529,15 @@ E[Spark Worker 1]
 
 F[Spark Worker 2]
 
-G[Google Cloud Storage]
+B <--> D
 
-A <---> B
+D <--> E
 
-B --> D
+D <--> F
 
-D --> E
+A <--> C
 
-D --> F
-
-D --> G
-
-A --> C
-
-B --> C
+B <--> C
 ```
 
 ---
